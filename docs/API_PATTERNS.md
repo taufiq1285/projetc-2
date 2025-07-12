@@ -556,3 +556,299 @@ user_permissions (user_id, permission_id, expires_at)
 **Error handling and testing patterns ready!**
 
 **Next:** Test first API call and commit changes according to roadmap.
+## 🛡️ PERMISSION CHECKING PATTERNS
+
+### 1. Basic Permission Check
+```typescript
+// Check single permission
+const { hasPermission } = usePermissions()
+
+const canCreateUser = async () => {
+  return await hasPermission('users', 'create')
+}
+
+// Usage in component
+const CreateUserButton = () => {
+  const [canCreate, setCanCreate] = useState(false)
+  const { hasPermission } = usePermissions()
+
+  useEffect(() => {
+    hasPermission('users', 'create').then(setCanCreate)
+  }, [hasPermission])
+
+  if (!canCreate) return null
+
+  return <button>Create User</button>
+}
+2. Pemeriksaan Izin Berdasarkan Konteks
+naskah ketikan// Check permission with context
+const canEditReport = async (reportId: string) => {
+  const { checkPermission } = usePermissions()
+  
+  const result = await checkPermission('reports', 'update', {
+    resource_id: reportId
+  })
+  
+  return result.allowed
+}
+
+// With ownership validation
+const MyReportsPage = () => {
+  const { user } = useAuth()
+  const { hasPermission } = usePermissions()
+
+  const canEditReport = async (reportId: string) => {
+    return await hasPermission('reports', 'update', {
+      user_id: user.id,
+      resource_id: reportId
+    })
+  }
+
+  return (
+    <div>
+      {reports.map(report => (
+        <ReportCard 
+          key={report.id}
+          report={report}
+          canEdit={() => canEditReport(report.id)}
+        />
+      ))}
+    </div>
+  )
+}
+3. Beberapa Pemeriksaan Izin
+naskah ketikan// Check multiple permissions (ANY)
+const canAccessInventory = async () => {
+  const { hasAnyPermission } = usePermissions()
+  
+  return await hasAnyPermission([
+    { resource: 'inventory', action: 'read' },
+    { resource: 'inventory', action: 'update' },
+    { resource: 'loans', action: 'approve' }
+  ])
+}
+
+// Check multiple permissions (ALL)
+const canManageEquipment = async () => {
+  const { hasAllPermissions } = usePermissions()
+  
+  return await hasAllPermissions([
+    { resource: 'inventory', action: 'update' },
+    { resource: 'loans', action: 'approve' },
+    { resource: 'labs', action: 'read' }
+  ])
+}
+4. Pemuatan Izin Dinamis
+naskah ketikan// Load available actions for a resource
+const getAvailableActions = async (resource: string, resourceId?: string) => {
+  const { hasPermission } = usePermissions()
+  const actions = ['create', 'read', 'update', 'delete', 'approve', 'export']
+  const available = []
+
+  for (const action of actions) {
+    const allowed = await hasPermission(resource, action, {
+      resource_id: resourceId
+    })
+    if (allowed) {
+      available.push(action)
+    }
+  }
+
+  return available
+}
+
+// Usage in dynamic UI
+const ActionButtons = ({ resource, resourceId }) => {
+  const [actions, setActions] = useState([])
+
+  useEffect(() => {
+    getAvailableActions(resource, resourceId).then(setActions)
+  }, [resource, resourceId])
+
+  return (
+    <div>
+      {actions.includes('update') && <EditButton />}
+      {actions.includes('delete') && <DeleteButton />}
+      {actions.includes('approve') && <ApproveButton />}
+    </div>
+  )
+}
+5. Perutean Berbasis Izin
+naskah ketikan// Route guard with permission check
+const ProtectedRoute = ({ resource, action, children }) => {
+  return (
+    <PermissionGuard resource={resource} action={action}>
+      {children}
+    </PermissionGuard>
+  )
+}
+
+// Usage in routing
+<Routes>
+  <Route 
+    path="/admin" 
+    element={
+      <ProtectedRoute resource="users" action="read">
+        <AdminDashboard />
+      </ProtectedRoute>
+    } 
+  />
+  <Route 
+    path="/inventory" 
+    element={
+      <ProtectedRoute resource="inventory" action="read">
+        <InventoryPage />
+      </ProtectedRoute>
+    } 
+  />
+</Routes>
+6. Pola Rendering Bersyarat
+naskah ketikan// Hide/show based on permissions
+const ConditionalButton = ({ resource, action, children }) => {
+  const { allowed } = usePermissionCheck(resource, action)
+  
+  return allowed ? children : null
+}
+
+// Usage
+<ConditionalButton resource="users" action="create">
+  <CreateUserButton />
+</ConditionalButton>
+
+// Disable/enable based on permissions
+const PermissionButton = ({ resource, action, children, ...props }) => {
+  const { allowed, loading } = usePermissionCheck(resource, action)
+  
+  return (
+    <button 
+      {...props}
+      disabled={loading || !allowed}
+      className={!allowed ? 'opacity-50 cursor-not-allowed' : ''}
+    >
+      {loading ? 'Checking...' : children}
+    </button>
+  )
+}
+7. Pola Penanganan Kesalahan
+naskah ketikan// Handle permission errors gracefully
+const safePermissionCheck = async (resource, action, context) => {
+  try {
+    const { checkPermission } = usePermissions()
+    const result = await checkPermission(resource, action, context)
+    
+    if (!result.allowed) {
+      // Log for audit
+      console.warn(`Permission denied: ${resource}:${action}`, result.reason)
+      
+      // Show user-friendly message
+      showNotification('Access denied: ' + result.reason, 'warning')
+    }
+    
+    return result.allowed
+  } catch (error) {
+    console.error('Permission check failed:', error)
+    // Fail secure - deny access on error
+    return false
+  }
+}
+
+// Bulk operation with permission validation
+const bulkDeleteItems = async (items) => {
+  const { hasPermission } = usePermissions()
+  const allowedItems = []
+  const deniedItems = []
+
+  for (const item of items) {
+    const allowed = await hasPermission('items', 'delete', {
+      resource_id: item.id
+    })
+    
+    if (allowed) {
+      allowedItems.push(item)
+    } else {
+      deniedItems.push(item)
+    }
+  }
+
+  if (deniedItems.length > 0) {
+    showNotification(
+      `Cannot delete ${deniedItems.length} items due to permission restrictions`,
+      'warning'
+    )
+  }
+
+  // Proceed with allowed items only
+  return deleteItems(allowedItems)
+}
+8. Pola Optimasi Kinerja
+naskah ketikan// Batch permission checks
+const checkMultiplePermissions = async (checks) => {
+  const { hasPermission } = usePermissions()
+  
+  // Run checks in parallel
+  const results = await Promise.all(
+    checks.map(({ resource, action, context }) =>
+      hasPermission(resource, action, context)
+    )
+  )
+  
+  return checks.map((check, index) => ({
+    ...check,
+    allowed: results[index]
+  }))
+}
+
+// Cache permission results
+const usePermissionCache = () => {
+  const cache = useRef(new Map())
+  const { hasPermission } = usePermissions()
+
+  const getCachedPermission = async (resource, action, context) => {
+    const key = `${resource}:${action}:${JSON.stringify(context)}`
+    
+    if (cache.current.has(key)) {
+      return cache.current.get(key)
+    }
+    
+    const result = await hasPermission(resource, action, context)
+    cache.current.set(key, result)
+    
+    // Clear cache after 5 minutes
+    setTimeout(() => cache.current.delete(key), 5 * 60 * 1000)
+    
+    return result
+  }
+
+  return { getCachedPermission }
+}
+
+---
+
+## 🧪 **TEST SUCCESS CRITERIA:**
+
+Test RBAC system functionality:
+
+```typescript
+// Add to App.tsx for testing
+import { PermissionService } from '@/lib/rbac/permissions'
+
+// Test permission checking
+const testRBAC = async () => {
+  console.log('🧪 Testing RBAC System...')
+  
+  // Test admin permissions
+  const adminTest = await PermissionService.hasPermission(
+    'admin-user-id', 
+    'users', 
+    'create'
+  )
+  console.log('Admin can create users:', adminTest.allowed)
+  
+  // Test student permissions
+  const studentTest = await PermissionService.hasPermission(
+    'student-user-id', 
+    'users', 
+    'create'
+  )
+  console.log('Student can create users:', studentTest.allowed)
+}
