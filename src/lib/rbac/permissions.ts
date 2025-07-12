@@ -17,6 +17,12 @@ interface UserData {
 }
 
 export class PermissionService {
+  static getUserPermissions(userId: string) {
+      throw new Error('Method not implemented.')
+  }
+  static getRolePermissions(role: string) {
+      throw new Error('Method not implemented.')
+  }
   // Cache for permissions to avoid repeated DB calls
   private static permissionCache = new Map<string, any[]>()
   private static userPermissionCache = new Map<string, string[]>()
